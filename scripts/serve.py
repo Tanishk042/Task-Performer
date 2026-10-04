@@ -22,21 +22,29 @@ sys.path.insert(0, str(ROOT))
 from common.config import get_settings  # noqa: E402
 from common.logging_setup import setup_logging  # noqa: E402
 
-APPS = [
-    ("vendor_portal", "environments.vendor_portal.app:app", 8001),
-    ("ap_system", "environments.ap_system.app:app", 8002),
-]
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reset", action="store_true",
                         help="re-seed both databases first")
     parser.add_argument("--visible", action="store_true",
                         help="run the agent's browser with a window")
-    parser.add_argument("--port", type=int, default=get_settings().orchestrator_port)
+    parser.add_argument("--port", type=int, default=None,
+                        help="orchestrator port (default: $PORT, else settings)")
     args = parser.parse_args()
     setup_logging()
+
+    settings = get_settings()
+    # A container must bind 0.0.0.0 and honour the platform's $PORT. Locally we
+    # stay on loopback so nothing is exposed to the network by accident.
+    host = os.environ.get("HOST") or os.environ.get("BIND_HOST") or "127.0.0.1"
+    port = args.port or int(os.environ.get("PORT") or settings.orchestrator_port)
+    # Ports come from Settings, not from a second hardcoded list: the agent
+    # reaches these apps by URL, so a divergence here is a silent hang.
+    apps = [
+        ("vendor_portal", "environments.vendor_portal.app:app",
+         settings.vendor_portal_port),
+        ("ap_system", "environments.ap_system.app:app", settings.ap_system_port),
+    ]
 
     if args.reset:
         # --no-restart: reset_env would otherwise start the apps itself, and we
@@ -45,20 +53,23 @@ def main() -> int:
                         "--no-restart"], check=True, cwd=ROOT)
 
     children: list[subprocess.Popen] = []
-    for name, target, port in APPS:
+    for name, target, app_port in apps:
         children.append(subprocess.Popen(
             [sys.executable, "-m", "uvicorn", target,
-             "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
+             # Internal-only: the agent reaches these over loopback and nothing
+             # outside the container needs them.
+             "--host", "127.0.0.1", "--port", str(app_port),
+             "--log-level", "warning"],
             cwd=ROOT))
 
     children.append(subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "orchestrator.app:app",
-         "--host", "127.0.0.1", "--port", str(args.port), "--log-level", "warning"],
+         "--host", host, "--port", str(port), "--log-level", "warning"],
         cwd=ROOT))
 
     env_note = ("real Anthropic client" if os.environ.get("ANTHROPIC_API_KEY")
                 else "ScriptedClient (no ANTHROPIC_API_KEY set)")
-    print(f"\n  AI Worker  http://127.0.0.1:{args.port}")
+    print(f"\n  AI Worker  http://{host}:{port}")
     print(f"  model      {env_note}")
     print(f"  browser    {'headed' if args.visible else 'headless'}")
 

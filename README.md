@@ -161,7 +161,62 @@ real browser and confirms the database is untouched.
 
 ---
 
-## Layout
+## Deploy
+
+**This cannot run on Vercel or any serverless platform**, and it is worth being
+explicit about why, because the UI is static and looks deployable:
+
+- **No Chromium.** Playwright's browser is ~150–400 MB and needs system libraries
+  (`libnss3`, `libatk`, `libgbm`) that serverless sandboxes don't provide. You can
+  install the Python package; you cannot install the browser.
+- **Read-only filesystem.** `data/*.db`, `runs/` and `workspace/` all live on
+  local disk, and SQLite needs real random-access writes.
+- **A run outlives the response.** A run parks for up to
+  `QUESTION_TIMEOUT_SECONDS` (900 s) waiting for a human to approve a write,
+  while the browser holds an SSE connection open throughout. That is the core
+  of how this demo works, and it is the one thing serverless cannot do.
+
+It is already shaped like an ordinary web service, so it wants a **container with
+a real disk and long-running processes**.
+
+### Fly.io
+
+```bash
+fly launch --no-deploy --copy-config
+fly volumes create aiworker_state --size 1
+fly secrets set ANTHROPIC_API_KEY=...    # optional; scripted provider is the default
+fly deploy
+```
+
+What the committed config does:
+
+| | |
+| --- | --- |
+| `Dockerfile` | Playwright's `v1.49.1-noble` image, which already has Chromium and every system dependency |
+| `.dockerignore` | Keeps the 181 MB `.venv` and host run state out of the build context |
+| `fly.toml` | One volume at `/data`, `HOST=0.0.0.0`, `$PORT`, health check on `/health` |
+| `auto_stop_machines = "off"` | **Load-bearing.** See below |
+| `[[vm]]` 2 GB + 512 MB swap | Chromium plus three Python processes will not fit in the 256 MB default |
+
+Two things that are easy to get wrong:
+
+- **Do not let Fly stop or suspend the machine.** Run state lives in the process
+  (`RunManager`, the parked interaction, the open SSE stream). `suspend` freezes
+  it mid-run; `stop` discards it and only the SQLite data survives. Either turns
+  a 15-second demo into an intermittent hang.
+- **One machine only.** Scaling out gives every instance its own copy of the
+  SQLite databases and its own in-memory run state, so a browser could start a
+  run on one instance and poll a different one and find nothing.
+
+The container deliberately runs **without `--reset`**: the apps call
+`bootstrap()` on startup, which is idempotent — a fresh volume seeds itself, and
+every later boot leaves the existing rows alone. Passing `--reset` would wipe the
+volume on every deploy.
+
+`Railway`, `Render` and a plain VPS + systemd + Caddy all work the same way; only
+the volume and health-check config changes.
+
+---
 
 | Path | |
 | --- | --- |
@@ -176,5 +231,6 @@ real browser and confirms the database is untouched.
 | `ui/` | One page, no framework, no build step |
 | `environments/` | The two mock apps + fault injection |
 | `scripts/serve.py` | Start everything at once |
+| `Dockerfile`, `fly.toml` | Container deploy (see [Deploy](#deploy)) |
 
 `ARCHITECTURE.md` has the full design and the reasoning behind it.

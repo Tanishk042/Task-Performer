@@ -42,9 +42,20 @@ def configure_logging() -> None:
     )
     root.addHandler(stream)
 
-    file_handler = logging.FileHandler(get_settings().runs_dir / "aiworker.log")
-    file_handler.setFormatter(JsonLineFormatter())
-    root.addHandler(file_handler)
+    # A fresh deployment (a new Fly volume, a new container, a clean checkout)
+    # has no runs/ directory yet, and FileHandler does not create parents.
+    # Without this the process dies before it can serve anything.
+    runs_dir = get_settings().runs_dir
+    try:
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(runs_dir / "aiworker.log")
+    except OSError as exc:
+        # Logging must never be the reason a run cannot start. The stream
+        # handler above still works.
+        print(f"aiworker: file logging disabled ({exc})", file=sys.stderr)
+    else:
+        file_handler.setFormatter(JsonLineFormatter())
+        root.addHandler(file_handler)
 
     for noisy in ("httpx", "httpcore", "urllib3", "asyncio", "playwright"):
         logging.getLogger(noisy).setLevel(logging.WARNING)

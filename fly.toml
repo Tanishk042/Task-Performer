@@ -1,0 +1,82 @@
+# Fly.io deployment for AI Worker.
+#
+#   fly launch --no-deploy --copy-config     # or edit this file by hand
+#   fly volumes create aiworker_state --size 1
+#   fly secrets set ANTHROPIC_API_KEY=...     # optional; scripted provider is the default
+#   fly deploy
+#
+# Why this needs a real VM rather than a serverless function: a run parks for up
+# to QUESTION_TIMEOUT_SECONDS (900s) waiting for a human to answer an approval or
+# resolve a data conflict, while the browser holds an SSE connection open the
+# whole time. See README "Deploy".
+
+app = "task-performer"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  # The orchestrator binds all interfaces; the two mock apps stay on loopback.
+  HOST = "0.0.0.0"
+  DATA_DIR = "/data"
+  RUNS_DIR = "/data/runs"
+  WORKSPACE_DIR = "/data/workspace"
+  BROWSER_HEADLESS = "true"
+  LLM_PROVIDER = "scripted"
+  # A parked run must outlive a plausible human response time.
+  QUESTION_TIMEOUT_SECONDS = "900"
+  AGENT_MAX_STEPS = "120"
+
+[mounts]
+  source = "aiworker_state"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_start_machines = true
+
+  # CRITICAL: do not let Fly stop or suspend this machine.
+  #
+  # A run holds its state in this process (RunManager, the parked interaction,
+  # the open SSE stream) and can sit idle for minutes waiting for a person to
+  # approve a write. "suspend" freezes the machine mid-run; "stop" discards the
+  # in-memory run entirely and only the SQLite data on the volume survives. Both
+  # turn a 15-second demo into an intermittent hang.
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  # Every open browser tab holds one long-lived SSE request, and the UI also
+  # polls /screenshot every 2.5s, so the connection count climbs well above the
+  # number of people watching. Keep the limits loose.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+    hard_limit = 200
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    # Chromium's first launch is slow; do not declare the machine unhealthy
+    # while it is still coming up.
+    grace_period = "60s"
+    method = "GET"
+    path = "/health"
+
+# Chromium plus three Python processes (orchestrator, portal, AP) will not fit
+# in the 256MB default. 2GB is the smallest size that runs a full agent loop
+# without the OOM killer intervening.
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+  # Chromium is allocation-hungry under a tight limit; a little swap turns a
+  # hard kill into a slow moment.
+  swap_size_mb = 512
+
+# Single machine by design. Scaling out would give every instance its own copy
+# of the SQLite databases and its own in-memory run state, so a browser could
+# POST a run to one machine and poll a different one and find nothing.
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
