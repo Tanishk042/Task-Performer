@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Bills{% endblock %}
+{% block nav %}
+  <a href="/bills" aria-current="page">Bills</a>
+  <a href="/bills/new">New bill</a>
+{% endblock %}
+{% block content %}
+<div class="page__head">
+  <div>
+    <span class="label">Payables ledger</span>
+    <h1 class="h1">Bills</h1>
+  </div>
+  <a class="button" href="/bills/new" id="new-bill">New bill</a>
+</div>
+
+<form method="get" action="/bills" class="row" style="margin-bottom:1.25rem">
+  <input class="input" name="q" type="search" value="{{ q }}" placeholder="Invoice # or vendor"
+         style="width:15rem" aria-label="Search bills">
+  <select class="select" name="vendor" style="width:15rem" aria-label="Filter by vendor">
+    <option value="">All vendors</option>
+    {% for v in vendors %}
+    <option value="{{ v.name }}" {% if vendor == v.name %}selected{% endif %}>{{ v.name }}</option>
+    {% endfor %}
+  </select>
+  <button class="button button--ghost" type="submit">Filter</button>
+  {% if q or vendor %}<a class="btn-link" href="/bills">Clear</a>{% endif %}
+  <span class="label" style="margin-left:auto">{{ total }} bill{{ '' if total == 1 else 's' }}</span>
+</form>
+
+{% if bills %}
+<table class="table" id="bills-table">
+  <caption>Newest entries first. Bills above {{ '{:,.0f}'.format(approval_threshold) }} {{ 'USD' }} require manager approval.</caption>
+  <thead>
+    <tr>
+      <th scope="col">Bill</th>
+      <th scope="col">Vendor</th>
+      <th scope="col">Invoice #</th>
+      <th scope="col" class="num">Amount</th>
+      <th scope="col">Due</th>
+      <th scope="col">Flags</th>
+      <th scope="col">Entered</th>
+    </tr>
+  </thead>
+  <tbody id="bill-rows">
+    {% for b in bills %}
+    <tr data-bill-id="{{ b.bill_id }}" data-invoice-number="{{ b.invoice_number }}">
+      <td class="mono"><a href="/bills/{{ b.bill_id }}">#{{ b.bill_id }}</a></td>
+      <td>{{ b.vendor_name }}</td>
+      <td class="mono">{{ b.invoice_number }}</td>
+      <td class="num mono">{{ b.amount | money(b.currency) }} {{ b.currency }}</td>
+      <td class="mono">{{ b.due_date }}</td>
+      <td>
+        {% if b.needs_manager_approval %}
+        <span class="tag tag--warn">Manager approval</span>
+        {% else %}<span class="muted body-small">—</span>{% endif %}
+      </td>
+      <td class="mono muted">{{ b.entered_on }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  {% set qs = ('q=' ~ q ~ '&vendor=' ~ vendor) if q or vendor else '' %}
+  {% if page > 1 %}<a class="btn-link" href="/bills?{{ qs }}&page={{ page - 1 }}">← Previous</a>
+  {% else %}<span class="muted body-small">← Previous</span>{% endif %}
+  <span class="mono muted">Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a class="btn-link" href="/bills?{{ qs }}&page={{ page + 1 }}">Next →</a>
+  {% else %}<span class="muted body-small">Next →</span>{% endif %}
+</nav>
+{% endif %}
+
+{% else %}
+<div class="notice">
+  <div class="notice__title">No bills match</div>
+  <p class="body-medium muted">Adjust the filters, or create a new bill.</p>
+</div>
+{% endif %}
+{% endblock %}

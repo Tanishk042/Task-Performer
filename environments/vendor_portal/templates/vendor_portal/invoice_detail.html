@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ invoice.invoice_number }}{% endblock %}
+{% block nav %}
+  <a href="/vendors">Vendors</a>
+  <a href="/vendors/{{ vendor.vendor_id }}">{{ vendor.name }}</a>
+{% endblock %}
+{% block content %}
+<div class="page__head">
+  <div>
+    <span class="label">{{ vendor.name }} · {{ vendor.legal_name }}</span>
+    <h1 class="h1">{{ invoice.invoice_number }}</h1>
+    <div class="row" style="margin-top:.5rem">
+      <span class="{{ invoice.status | status_tag }}">{{ invoice.status | status_label }}</span>
+      {% if invoice.po_number %}<span class="tag tag--muted">{{ invoice.po_number }}</span>{% endif %}
+    </div>
+  </div>
+  <a class="button" id="download-pdf"
+     href="/vendors/{{ vendor.vendor_id }}/invoices/{{ invoice.invoice_number }}/download">
+    Download PDF
+  </a>
+</div>
+
+<div class="section">
+  <h2 class="h2">Summary</h2>
+  <dl class="kv" style="margin-top:1.25rem">
+    <dt>Amount</dt>
+    <dd class="mono" id="invoice-amount" data-amount="{{ invoice.amount }}" data-currency="{{ invoice.currency }}">
+      {{ amount_display }} {{ invoice.currency }}
+    </dd>
+
+    <dt>Payment due</dt>
+    <dd class="mono" id="invoice-due" data-due-iso="{{ invoice.due_on }}">{{ due_display }}</dd>
+
+    <dt>Issue date</dt>
+    <dd class="mono" id="invoice-issued" data-issued-iso="{{ invoice.issued_on }}">{{ issued_display }}</dd>
+
+    <dt>Terms</dt>
+    <dd class="body-medium">{{ vendor.terms_days }} days from issue</dd>
+
+    <dt>Description</dt>
+    <dd class="body-medium">{{ invoice.description }}</dd>
+
+    <dt>Billing entity</dt>
+    <dd class="body-medium">{{ vendor.legal_name }}<br><span class="muted">{{ vendor.address }}</span></dd>
+  </dl>
+</div>
+
+{% if pdf_amount_display %}
+<div class="section">
+  <h2 class="h2">Amendment</h2>
+  <div class="notice">
+    <div class="notice__title">Amount revised on the PDF</div>
+    <p class="body-medium">
+      This invoice was reissued under an amendment. The PDF is the authoritative
+      document; the summary above may lag behind it.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% if invoice.note %}
+<div class="section">
+  <h2 class="h2">Vendor note</h2>
+  <p class="body-medium">{{ invoice.note }}</p>
+</div>
+{% endif %}
+{% endblock %}

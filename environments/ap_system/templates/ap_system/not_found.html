@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Not found{% endblock %}
+{% block content %}
+<div class="page__head">
+  <div>
+    <span class="label">Error 404</span>
+    <h1 class="h1">Not found</h1>
+  </div>
+</div>
+<div class="notice">
+  <div class="notice__title">No record for {{ what }}</div>
+</div>
+<a class="btn-link" href="/bills">Back to bills</a>
+{% endblock %}

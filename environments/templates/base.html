@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}App{% endblock %} · {{ app_name }}</title>
+<link rel="stylesheet" href="/static/app.css">
+{% block head %}{% endblock %}
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+  <div class="app-header__in">
+    <div class="app-header__brand">
+      <span class="app-header__wordmark">{{ app_name }}</span>
+      <span class="app-header__context label">{{ context_label }}</span>
+    </div>
+    <nav class="app-nav" aria-label="Primary">
+      {% block nav %}{% endblock %}
+      {% if current_user %}
+      <form method="post" action="/logout" style="display:inline">
+        <button class="btn-link" type="submit">Sign out</button>
+      </form>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="page">
+  {% block content %}{% endblock %}
+</main>
+
+<div id="toast-host" aria-live="polite" aria-atomic="false"></div>
+
+{% if toasts %}
+<script>window.__TOASTS__ = {{ toasts | tojson }};</script>
+{% endif %}
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

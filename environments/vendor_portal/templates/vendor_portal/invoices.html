@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "vendor_portal/_invoice_rows.html" import inv_rows with context %}
+{% block title %}{{ vendor.name }} · Invoices{% endblock %}
+{% block nav %}
+  <a href="/vendors">Vendors</a>
+  <a href="/vendors/{{ vendor.vendor_id }}" aria-current="page">Invoices</a>
+{% endblock %}
+{% block content %}
+<div class="page__head">
+  <div>
+    <span class="label">{{ vendor.country }} · {{ vendor.currency }} · terms {{ vendor.terms_days }} days</span>
+    <h1 class="h1">{{ vendor.name }}</h1>
+    <p class="body-medium muted">{{ vendor.legal_name }}</p>
+  </div>
+  <a class="btn-link" href="/vendors/{{ vendor.vendor_id }}?sort=issued&amp;dir={{ 'asc' if direction == 'desc' else 'desc' }}">
+    Sort by issue date {{ '↑' if sort == 'issued' and direction == 'asc' else '↓' if sort == 'issued' else '' }}
+  </a>
+</div>
+
+<div class="section">
+  <div class="section__head">
+    <h2 class="h2">Invoices</h2>
+    <span class="label">{{ total }} total · dates as {{ date_style }}</span>
+  </div>
+
+  {% if invoices %}
+  <table class="table" id="invoice-table">
+    <caption>Newest first by default. Draft and void invoices are shown but are not payable.</caption>
+    <thead>
+      <tr>
+        <th scope="col"><a href="/vendors/{{ vendor.vendor_id }}?sort=number&amp;dir={{ direction }}">Invoice #</a></th>
+        <th scope="col"><a href="/vendors/{{ vendor.vendor_id }}?sort=issued&amp;dir={{ direction }}">Issued</a></th>
+        <th scope="col"><a href="/vendors/{{ vendor.vendor_id }}?sort=due&amp;dir={{ direction }}">Due</a></th>
+        <th scope="col" class="num"><a href="/vendors/{{ vendor.vendor_id }}?sort=amount&amp;dir={{ direction }}">Amount</a></th>
+        <th scope="col">Status</th>
+      </tr>
+    </thead>
+    {% if flaky_render %}
+    <tbody id="invoice-rows"></tbody>
+    <script type="application/json" id="deferred-rows" data-target="invoice-rows" data-delay="{{ flaky_ms }}">{{ show_rows_html | safe }}</script>
+    {% else %}
+    <tbody id="invoice-rows">{{ inv_rows(invoices, vendor, date_style) }}</tbody>
+    {% endif %}
+  </table>
+
+  {% if pages > 1 %}
+  <nav class="pagination" aria-label="Pagination">
+    {% set qs = 'sort=' ~ sort ~ '&dir=' ~ direction ~ '&per_page=' ~ per_page %}
+    {% if page > 1 %}
+      <a class="btn-link" href="/vendors/{{ vendor.vendor_id }}?{{ qs }}&page={{ page - 1 }}">← Previous</a>
+    {% else %}<span class="muted body-small">← Previous</span>{% endif %}
+    <span class="mono muted">Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}
+      <a class="btn-link" href="/vendors/{{ vendor.vendor_id }}?{{ qs }}&page={{ page + 1 }}">Next →</a>
+    {% else %}<span class="muted body-small">Next →</span>{% endif %}
+  </nav>
+  {% endif %}
+  {% else %}
+  <div class="notice"><div class="notice__title">No invoices</div></div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% macro inv_rows(invoices, vendor, date_style) -%}
+{%- for inv in invoices -%}
+<tr data-invoice-number="{{ inv.invoice_number }}" data-status="{{ inv.status }}">
+  <td class="mono"><a href="/vendors/{{ vendor.vendor_id }}/invoices/{{ inv.invoice_number }}">{{ inv.invoice_number }}</a></td>
+  <td class="mono">{{ inv.issued_on | display_date(date_style) }}</td>
+  <td class="mono">{{ inv.due_on | display_date(date_style) }}</td>
+  <td class="num mono">{{ inv.amount | money(inv.currency) }} {{ inv.currency }}</td>
+  <td><span class="{{ inv.status | status_tag }}">{{ inv.status | status_label }}</span></td>
+</tr>
+{%- endfor -%}
+{%- endmacro %}

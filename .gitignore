@@ -1,0 +1,26 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets. .env.example is committed; the real file never is.
+.env
+.env.*
+!.env.example
+
+# Generated state — all of it is rebuilt from the seed, none of it is source.
+# data/   SQLite databases for the two mock apps (scripts/reset_env.py)
+# runs/   one directory per agent run: trace.jsonl, screenshots, downloads
+# workspace/ and downloads/  the tool sandbox and its landing spots
+data/
+runs/
+workspace/
+downloads/
+
+# OS
+.DS_Store

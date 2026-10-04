@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Vendors{% endblock %}
+{% block nav %}
+  <a href="/vendors" {% if nav_active == 'vendors' %}aria-current="page"{% endif %}>Vendors</a>
+{% endblock %}
+{% block content %}
+<div class="page__head">
+  <div>
+    <span class="label">Directory</span>
+    <h1 class="h1">Vendors</h1>
+  </div>
+  <form method="get" action="/vendors" class="row">
+    <label class="field__label" for="q" style="margin:0">Search</label>
+    <input class="input" id="q" name="q" type="search" value="{{ q }}"
+           placeholder="Name or legal name" style="width:16rem">
+    <button class="button button--ghost" type="submit">Search</button>
+    {% if q %}<a class="btn-link" href="/vendors">Clear</a>{% endif %}
+  </form>
+</div>
+
+{% if vendors %}
+<table class="table">
+  <caption>{{ vendors|length }} vendor{{ '' if vendors|length == 1 else 's' }}{% if q %} matching “{{ q }}”{% endif %}</caption>
+  <thead>
+    <tr>
+      <th scope="col">Vendor</th>
+      <th scope="col">Legal entity</th>
+      <th scope="col">Country</th>
+      <th scope="col" class="num">Invoices</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for v in vendors %}
+    <tr>
+      <td><a href="/vendors/{{ v.vendor_id }}">{{ v.name }}</a></td>
+      <td class="muted">{{ v.legal_name }}</td>
+      <td class="muted">{{ v.country }}</td>
+      <td class="num mono">{{ counts[v.vendor_id] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="notice">
+  <div class="notice__title">No vendors matched</div>
+  <p class="body-medium muted">Try a shorter search term, or clear the filter.</p>
+</div>
+{% endif %}
+{% endblock %}

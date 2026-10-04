@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Bill #{{ bill.bill_id }}{% endblock %}
+{% block nav %}
+  <a href="/bills">Bills</a>
+  <a href="/bills/new">New bill</a>
+{% endblock %}
+{% block content %}
+<div class="page__head">
+  <div>
+    <span class="label">Bill #{{ bill.bill_id }}</span>
+    <h1 class="h1">{{ bill.invoice_number }}</h1>
+    <div class="row" style="margin-top:.5rem">
+      {% if bill.needs_manager_approval %}
+      <span class="tag tag--warn" id="approval-flag">Manager approval required</span>
+      {% else %}<span class="tag tag--muted">Standard processing</span>{% endif %}
+    </div>
+  </div>
+  <a class="btn-link" href="/bills">All bills</a>
+</div>
+
+<div class="section">
+  <dl class="kv" style="margin-top:1.25rem">
+    <dt>Vendor</dt><dd id="bill-vendor">{{ bill.vendor_name }}</dd>
+    <dt>Invoice number</dt><dd class="mono" id="bill-invoice-number">{{ bill.invoice_number }}</dd>
+    <dt>Amount</dt>
+    <dd class="mono" id="bill-amount" data-amount="{{ '%.2f' % bill.amount }}"
+        data-currency="{{ bill.currency }}">{{ amount_display }} {{ bill.currency }}</dd>
+    <dt>Currency</dt><dd class="mono">{{ bill.currency }}</dd>
+    <dt>Due date</dt><dd class="mono" id="bill-due-date" data-due="{{ bill.due_date }}">{{ bill.due_date }}</dd>
+    <dt>Entered by</dt><dd class="body-medium">{{ bill.entered_by or '—' }}</dd>
+    <dt>Entered on</dt><dd class="mono">{{ bill.entered_on }}</dd>
+    {% if bill.notes %}
+    <dt>Notes</dt><dd class="body-medium">{{ bill.notes }}</dd>
+    {% endif %}
+  </dl>
+</div>
+{% endblock %}

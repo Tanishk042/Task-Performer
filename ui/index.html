@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Worker — supervised browser agent</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230a0a0a'/></svg>">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead__mark">
+    <span class="masthead__glyph" aria-hidden="true"></span>
+    <h1>AI&nbsp;Worker</h1>
+  </div>
+  <p class="masthead__sub">A browser agent that does the work, then checks its own work.</p>
+  <div class="masthead__status">
+    <span id="status-pill" class="pill pill--idle">idle</span>
+    <span id="elapsed" class="mono dim"></span>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- ── left column: brief + controls ───────────────────────────── -->
+  <section class="col col--brief">
+
+    <div class="panel">
+      <h2 class="panel__title">Task</h2>
+      <label class="sr-only" for="goal">What should the worker do?</label>
+      <textarea id="goal" rows="4" spellcheck="false"
+        placeholder="e.g. Enter the latest open invoice from Hooli Cloud Services into AP."></textarea>
+      <div class="row">
+        <button id="start" class="btn btn--primary">Start run</button>
+        <button id="cancel" class="btn" disabled>Stop</button>
+      </div>
+      <p id="run-id" class="mono dim tiny"></p>
+    </div>
+
+    <div class="panel">
+      <h2 class="panel__title">Examples</h2>
+      <ul id="examples" class="examples"></ul>
+    </div>
+
+    <div class="panel">
+      <h2 class="panel__title">Fault injection</h2>
+      <p class="hint">Break the world on purpose and watch the agent notice.</p>
+      <div id="faults" class="faults"></div>
+      <button id="faults-reset" class="linkbtn">Disarm all</button>
+    </div>
+
+    <div class="panel">
+      <h2 class="panel__title">Working memory</h2>
+      <p class="hint">Facts the agent wrote down, with where each came from.</p>
+      <table class="facts"><tbody id="facts"></tbody></table>
+    </div>
+
+  </section>
+
+  <!-- ── right column: the run ──────────────────────────────────── -->
+  <section class="col col--run">
+
+    <div class="panel">
+      <h2 class="panel__title">Plan &amp; success criteria</h2>
+      <ol id="plan" class="plan"><li class="empty">No plan yet.</li></ol>
+      <ul id="criteria" class="criteria"></ul>
+    </div>
+
+    <div class="panel panel--feed">
+      <h2 class="panel__title">Actions</h2>
+      <div id="feed" class="feed"><p class="empty">Waiting for the first step.</p></div>
+    </div>
+
+    <div class="panel">
+      <h2 class="panel__title">Browser</h2>
+      <div class="shot">
+        <img id="shot" alt="Latest screenshot from the agent's browser" hidden>
+        <p id="shot-empty" class="empty">No screenshot yet.</p>
+      </div>
+    </div>
+
+    <div class="panel" id="report-panel" hidden>
+      <h2 class="panel__title">Report</h2>
+      <div id="report"></div>
+    </div>
+
+    <div class="panel">
+      <h2 class="panel__title">Trace</h2>
+      <button id="trace-toggle" class="linkbtn">Show raw trace</button>
+      <pre id="trace" class="trace" hidden></pre>
+    </div>
+
+  </section>
+</main>
+
+<!-- ── human in the loop ──────────────────────────────────────────── -->
+<div id="scrim" class="scrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="q-title">
+    <p id="q-kind" class="modal__kind">needs you</p>
+    <h2 id="q-title" class="modal__title"></h2>
+    <p id="q-just" class="modal__just"></p>
+    <div id="q-options" class="modal__options"></div>
+    <label class="sr-only" for="q-input">Your answer</label>
+    <textarea id="q-input" rows="2" spellcheck="false"></textarea>
+    <p id="q-fp" class="mono tiny dim"></p>
+    <div class="row row--end">
+      <button id="q-deny" class="btn">Deny</button>
+      <button id="q-approve" class="btn btn--primary">Approve</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

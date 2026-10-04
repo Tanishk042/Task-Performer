@@ -1,0 +1,90 @@
+# Safety policy for the AI Worker agent.
+#
+# Two things are configurable:
+#   * `thresholds` — numeric limits that trigger a human gate (e.g. big money).
+#   * `approvals.rules` — which named rules are active, and what risk each
+#     carries. A rule that is *enabled* and carries `irreversible_write` risk
+#     forces `request_approval` before the matching tool call can execute.
+#
+# Enforcement is in agent/safety.py::Policy.enforce, which runs in the executor
+# *before* the tool touches the browser. Changing this file changes behaviour
+# without touching code.
+
+approvals:
+  # Every irreversible write needs a human. Turning this off is the single
+  # fastest way to make the agent dangerous; it exists for debugging.
+  require_for_irreversible_write: true
+
+  # Reads never need approval.
+  auto_approve_reads: true
+
+  rules:
+    irreversible_write:
+      enabled: true
+      risk: irreversible_write
+
+    amount_over_threshold:
+      enabled: true
+      risk: irreversible_write
+      params:
+        note: >
+          Fires when a tool call carries an amount in `thresholds.amount.currency`
+          above `thresholds.amount.value`.
+
+    vendor_ambiguity:
+      enabled: true
+      risk: irreversible_write
+      params:
+        note: >
+          Fires when the agent asserts ambiguity (args.ambiguous / args.candidates)
+          — e.g. two entities in the portal both match the name the user gave.
+
+    duplicate_suspected:
+      enabled: true
+      risk: irreversible_write
+      params:
+        note: Fires when args.duplicate_suspected / args.already_exists is set.
+
+    low_confidence_extraction:
+      enabled: true
+      risk: reversible_write
+      params:
+        min_confidence: 0.75
+
+    unverified_source:
+      enabled: true
+      risk: reversible_write
+      params:
+        note: >
+          A write that persists a value with no recorded provenance still runs,
+          but is reported so the final summary can call it out.
+
+    external_side_effect:
+      enabled: true
+      risk: irreversible_write
+
+thresholds:
+  amount:
+    value: 10000.0
+    currency: USD
+    note: >
+      Bills above this need manager approval in the AP system anyway; the agent
+      gates on it too so a human sees the decision before it is made.
+
+  # Ambiguity is not numeric; kept here so the UI can surface the policy.
+  vendor_match:
+    max_candidates_without_asking: 1
+
+runtime:
+  max_steps: 40
+  max_tokens: 400000
+  max_wall_clock_seconds: 600
+  max_repair_cycles: 2
+  max_same_action_repeats: 3
+  max_consecutive_failures: 5
+  transient_backoff_seconds: [0.4, 1.2, 3.0]
+
+verification:
+  max_criteria: 12
+  # A criterion the verifier cannot evaluate at all counts as failed, not passed.
+  unevaluable_is_failure: true

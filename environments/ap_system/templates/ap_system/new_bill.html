@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}New bill{% endblock %}
+{% block nav %}
+  <a href="/bills">Bills</a>
+  <a href="/bills/new" aria-current="page">New bill</a>
+{% endblock %}
+{% block content %}
+<div class="page__head">
+  <div>
+    <span class="label">Payables ledger</span>
+    <h1 class="h1">New bill</h1>
+    <p class="body-medium muted">
+      Bills above {{ '{:,.0f}'.format(approval_threshold) }} USD are flagged for manager approval.
+    </p>
+  </div>
+  <a class="btn-link" href="/bills">Cancel</a>
+</div>
+
+{% if errors %}
+<div class="notice notice--error" role="alert" id="form-errors">
+  <div class="notice__title">The bill was not saved</div>
+  <ul>
+    {% for field, message in errors.items() %}
+    <li class="body-medium" data-error-for="{{ field }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="/bills/new" novalidate id="new-bill-form" style="max-width:44rem">
+  <div class="form-grid">
+    <div class="field field--full">
+      <label class="field__label" for="{{ fields.vendor[0] }}">{{ fields.vendor[2] }}</label>
+      <select class="select" id="{{ fields.vendor[0] }}" name="{{ fields.vendor[1] }}"
+              {% if errors.vendor %}aria-invalid="true"{% endif %} required>
+        <option value="">Select a vendor…</option>
+        {% for v in vendors %}
+        <option value="{{ v.name }}" {% if (form.vendor or vendor_preselect) == v.name %}selected{% endif %}>{{ v.name }}</option>
+        {% endfor %}
+      </select>
+      {% if errors.vendor %}<div class="field__error">{{ errors.vendor }}</div>{% endif %}
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="{{ fields.invoice_number[0] }}">{{ fields.invoice_number[2] }}</label>
+      <input class="input mono" id="{{ fields.invoice_number[0] }}" name="{{ fields.invoice_number[1] }}"
+             type="text" value="{{ form.invoice_number or '' }}"
+             {% if errors.invoice_number %}aria-invalid="true"{% endif %} required>
+      {% if errors.invoice_number %}
+      <div class="field__error" id="invoice-number-error">{{ errors.invoice_number }}</div>
+      {% else %}
+      <div class="field__hint">Must be unique per vendor.</div>
+      {% endif %}
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="{{ fields.due_date[0] }}">{{ fields.due_date[2] }}</label>
+      <input class="input mono" id="{{ fields.due_date[0] }}" name="{{ fields.due_date[1] }}"
+             type="text" placeholder="YYYY-MM-DD" value="{{ form.due_date or '' }}"
+             {% if errors.due_date %}aria-invalid="true"{% endif %} required>
+      {% if errors.due_date %}<div class="field__error">{{ errors.due_date }}</div>
+      {% else %}<div class="field__hint">Format YYYY-MM-DD.</div>{% endif %}
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="{{ fields.amount[0] }}">{{ fields.amount[2] }}</label>
+      <input class="input mono" id="{{ fields.amount[0] }}" name="{{ fields.amount[1] }}"
+             type="text" inputmode="decimal" placeholder="0.00" value="{{ form.amount or '' }}"
+             {% if errors.amount %}aria-invalid="true"{% endif %} required>
+      {% if errors.amount %}<div class="field__error">{{ errors.amount }}</div>
+      {% else %}<div class="field__hint">Decimal amount, e.g. 4820.00</div>{% endif %}
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="{{ fields.currency[0] }}">{{ fields.currency[2] }}</label>
+      <select class="select" id="{{ fields.currency[0] }}" name="{{ fields.currency[1] }}"
+              {% if errors.currency %}aria-invalid="true"{% endif %} required>
+        {% for code in ['USD', 'EUR', 'GBP'] %}
+        <option value="{{ code }}" {% if (form.currency or 'USD') == code %}selected{% endif %}>{{ code }}</option>
+        {% endfor %}
+      </select>
+      {% if errors.currency %}<div class="field__error">{{ errors.currency }}</div>{% endif %}
+    </div>
+
+    <div class="field field--full">
+      <label class="field__label" for="{{ fields.notes[0] }}">{{ fields.notes[2] }}</label>
+      <textarea class="textarea" id="{{ fields.notes[0] }}" name="{{ fields.notes[1] }}"
+                placeholder="Provenance, PO reference, anything worth recording">{{ form.notes or '' }}</textarea>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:1.25rem">
+    <button class="button" type="submit" id="{{ submit[0] }}" name="{{ submit[1] }}">{{ submit[2] }}</button>
+    <a class="btn-link" href="/bills">Cancel</a>
+  </div>
+</form>
+{% endblock %}
