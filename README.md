@@ -198,7 +198,7 @@ bash deploy/deploy.sh                # build, start, wait for health
 | | |
 | --- | --- |
 | `deploy/docker-compose.yml` | The agent plus Caddy; named volume for state |
-| `deploy/Caddyfile` | Automatic TLS, and `flush_interval -1` so SSE is not buffered |
+| `deploy/Caddyfile` | Automatic TLS, fail-closed basic auth, long timeouts for parked runs |
 | `deploy/oracle_setup.sh` | Idempotent VM prep |
 | `deploy/deploy.sh` | Validates config, builds, waits for health, prints the URL |
 

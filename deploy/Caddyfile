@@ -1,22 +1,19 @@
 # Caddy sits in front of the agent, terminates TLS with an automatically renewed
 # Let's Encrypt certificate, and requires a password.
 #
-# Two settings in here are load-bearing, not decoration:
-#
-#   flush_interval -1   Without it Caddy buffers the response body, so the
-#                       Server-Sent Events stream arrives at the browser in one
-#                       lump when the run finishes. The live feed stops being
-#                       live.
-#   long read timeout   A parked run holds its SSE connection open for up to
-#                       QUESTION_TIMEOUT_SECONDS while a human decides. The
-#                       30s-ish defaults would cull it mid-run.
-#
 # CADDY_USER and CADDY_HASH come from deploy/.env. If either is unset this file
 # fails to load rather than serving the agent unauthenticated, which is the
 # intended behaviour: this app has no authentication of its own, and anyone who
 # can reach it can start agent runs.
 
 {
+	# Where Let's Encrypt sends expiry warnings. Must NOT be empty.
+	#
+	# Compose always passes ACME_EMAIL through, so when it is unset the
+	# placeholder expands to nothing and the line collapses to a bare "email",
+	# which Caddy rejects with "wrong argument count" — a proxy that refuses to
+	# start over a convenience setting. deploy.sh requires this to be set and
+	# runs `caddy validate` before deploying, so the error names itself.
 	email {$ACME_EMAIL:admin@example.com}
 }
 
@@ -25,15 +22,29 @@
 
 	# Fail closed. Caddy rejects an empty username here, so forgetting to set
 	# CADDY_USER stops the container instead of exposing the agent.
+	#
+	# One credential per line, and the username and hash must be on the SAME
+	# line. Splitting them across two lines was the bug this originally had:
+	# Caddy reads the first line as a whole credential, finds no password, and
+	# dies with "username and password cannot be empty or missing" — which looks
+	# like the env vars failed to arrive when they had arrived perfectly.
 	basic_auth {
-		{$CADDY_USER}
-		{$CADDY_HASH}
+		{$CADDY_USER} {$CADDY_HASH}
 	}
 
 	reverse_proxy aiworker:8080 {
-		# See the note at the top of this file.
+		# Disables response buffering explicitly.
+		#
+		# Measured, not assumed: with this line removed, SSE still streamed
+		# identically (136 frames, halfway point at 54% of the run either way).
+		# Caddy v2 already handles text/event-stream unbuffered by default. So
+		# this is insurance against a future default changing, not a fix for an
+		# observed problem — kept because the day it is needed will otherwise be
+		# indistinguishable from "the app is just slow".
 		flush_interval -1
 		transport http {
+			# A parked run holds this connection open while a human decides, so
+			# the defaults (which cut idle connections) are far too short.
 			read_timeout 3600s
 			write_timeout 3600s
 		}

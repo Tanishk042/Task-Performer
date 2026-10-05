@@ -25,7 +25,7 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is miss
 if grep -q 'PASTE_THE_HASH_HERE' "$ENV_FILE"; then
   die "CADDY_HASH is still the placeholder in deploy/.env — run deploy/oracle_setup.sh, or paste a real bcrypt hash"
 fi
-for var in DOMAIN CADDY_USER CADDY_HASH; do
+for var in DOMAIN CADDY_USER CADDY_HASH ACME_EMAIL; do
   grep -qE "^${var}=.+" "$ENV_FILE" || die "${var} is empty in deploy/.env"
 done
 
@@ -33,6 +33,29 @@ done
 grep -qE '^RESET=true' "$ENV_FILE" && die "do not set RESET=true in deploy/.env"
 
 cd "$REPO_ROOT"
+
+# Validate the Caddyfile with the real environment BEFORE building or starting
+# anything. Without this, a Caddyfile mistake shows up as a container that
+# restarts every few seconds logging nothing useful, long after the deploy
+# appeared to succeed. This check is not theoretical: an empty ACME_EMAIL
+# collapses the `email` line to a bare directive and Caddy exits 1 with
+# "wrong argument count" and no other output.
+log "Validating the Caddyfile"
+validate_args=()
+for var in DOMAIN ACME_EMAIL CADDY_USER CADDY_HASH; do
+  validate_args+=(-e "$var=$(grep -E "^${var}=" "$ENV_FILE" | cut -d= -f2-)")
+done
+# The caddy image ships no ENTRYPOINT, so the first argument is exec'd directly.
+# Passing a bare `validate` therefore fails with "executable file not found",
+# and passing both --entrypoint caddy *and* a leading `caddy` fails with
+# "unknown command". Spelling the binary out is the form that works.
+if ! validate_out="$(docker run --rm "${validate_args[@]}" \
+      -v "$REPO_ROOT/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+      caddy:2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1)"; then
+  printf '%s\n' "$validate_out" | sed 's/^/  /'
+  die "the Caddyfile is invalid (see above)"
+fi
+echo "  Caddyfile OK"
 
 # One machine, always on. A run parks for QUESTION_TIMEOUT_SECONDS waiting for a
 # human while the browser holds an SSE connection open; letting Docker restart

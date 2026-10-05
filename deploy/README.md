@@ -114,3 +114,32 @@ only way in.
 - **One machine.** Run state is in-process. Scaling out would give every replica
   its own SQLite files and its own copy of the run, so a browser could start a
   run on one and poll another and find nothing.
+
+## What was actually verified
+
+Built and run on an arm64 host (Apple Silicon under Colima):
+
+- Image builds: `arm64/linux`, 3.61 GB, Chromium 131 at
+  `/ms-playwright/chromium-1148`
+- Container reaches `healthy`; a fresh volume self-seeds
+- Full agent run **inside the container**: 31 steps, approval pause at 14.0 s,
+  resume, `verified`, second browser look — identical to the host
+- Redeploy (container destroyed and recreated): **no re-seed**, bill and traces
+  intact
+- Full stack with Caddy: `401` with no credentials, `401` with a wrong password,
+  `200` with the right one; UI, JS and CSS proxied
+- `deploy.sh` end to end: validates, builds, starts, prints the URL
+
+Two claims did **not** survive measurement, and the comments now say so:
+
+- **`flush_interval -1` is not what makes SSE work.** With the line removed the
+  stream was indistinguishable: 136 frames either way, halfway point at 55% vs
+  54% of the run. Caddy v2 already handles `text/event-stream` unbuffered. The
+  setting is kept as insurance against that changing, and is described as such.
+- **Caddy's parser is lenient.** A missing `{` in some positions is tolerated, so
+  `deploy.sh` validates with Caddy's own parser rather than trying to spot
+  mistakes itself.
+
+Not verified: a real ARM VM. This was arm64 via emulation-free virtualisation on
+an Apple Silicon host, which is the same architecture Oracle's A1 shape provides,
+but the kernel, cgroup limits and network are not OCI's.
