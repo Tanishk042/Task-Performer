@@ -214,6 +214,106 @@ def test_claims_only_bills_actually_submitted():
     assert len(claimed) == 1 and claimed[0]["invoice_number"] == "GX-1140"
 
 
+# --------------------------------------------------------------------------
+# refusing work that is not ours
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "goal, why",
+    [
+        ("What is the weather in Hamburg?",
+         "not a task about the portal or AP at all"),
+        ("thanks, that worked nicely", "a reply, not a request"),
+        ("Delete every bill in the AP system for Hooli Cloud Services.",
+         "deleting is not a capability this agent has"),
+        ("cancel invoice HL-2260 please", "cancelling is not a capability either"),
+    ],
+)
+def test_nonsense_and_destructive_requests_are_refused(goal, why):
+    """The agent must not start a write path for a request that isn't one.
+
+    Before this, "what's the weather" walked into Acme Corp and proposed
+    entering AC-2291 behind a real approval prompt, and "delete every bill"
+    proposed entering HL-2201. Asking a human to approve the wrong bill is worse
+    than doing nothing, because it looks legitimate.
+    """
+    assert parsed(goal).unsupported, f"should have refused ({why})"
+
+
+@pytest.mark.parametrize(
+    "goal",
+    [
+        "Log in to the vendor portal and enter Hooli Cloud Services' latest "
+        "payable invoice into the AP system, flagging it for manager approval.",
+        "Log in to the vendor portal and enter Hooli Cloud Services' invoice "
+        "HL-2260 into the AP system.",
+        "Log in to the vendor portal and enter Hooli Cloud Services' invoices "
+        "that have not already been entered into the AP system.",
+        "Enter the latest open invoice from Hooli Cloud Services into AP.",
+        "Enter every open payable from Globex Industrial into AP.",
+        "Check whether invoice HL-2291 for Hooli Cloud Services was already "
+        "entered in AP.",
+        "Enter all invoices due in the next 7 days into AP.",
+    ],
+)
+def test_real_tasks_are_still_accepted(goal):
+    assert parsed(goal).unsupported == "", "a real task must not be refused"
+
+
+@pytest.mark.parametrize(
+    "goal, scope",
+    [
+        ("Enter every open payable from Globex Industrial into AP.",
+         "all_payable"),
+        ("enter every payable from Globex Industrial", "all_payable"),
+        ("Enter every bill from Acme into AP.", "all_payable"),
+        # Singular requests must not be swept up by the plural detection.
+        ("Enter the latest open invoice from Hooli Cloud Services into AP.",
+         "latest"),
+        ("Enter invoice HL-2260 for Hooli Cloud Services into AP.", "exact"),
+    ],
+)
+def test_sweep_detection_covers_payable_and_bill(goal, scope):
+    """This portal says "payable" as often as "invoice".
+
+    Matching only "invoice" made the sweep example this project ships in its own
+    README quietly enter a single invoice instead of all of them.
+    """
+    assert parsed(goal).scope == scope
+
+
+@pytest.mark.parametrize(
+    "goal",
+    [
+        "Enter every open payable from Globex Industrial into AP, skipping any "
+        "already entered.",
+        "Enter every payable, skip anything already there",
+        "skip duplicates",
+        "don't create duplicates",
+        "avoid duplicates",
+        "invoices that have not already been entered into the AP system",
+    ],
+)
+def test_skip_duplicates_detected_across_phrasings(goal):
+    """`skip\\b` cannot match "skipping".
+
+    The wording this project ships in its own README is "skipping any already
+    entered", so the flag silently stayed false and the agent proposed entering
+    an invoice that was already in AP.
+    """
+    assert parsed(goal).skip_duplicates is True, goal
+
+
+@pytest.mark.parametrize(
+    "goal",
+    [
+        "Enter the latest open invoice from Hooli Cloud Services into AP.",
+        "Enter invoice HL-2260 for Hooli Cloud Services into AP.",
+    ],
+)
+def test_skip_duplicates_not_inferred_when_not_asked(goal):
+    assert parsed(goal).skip_duplicates is False, goal
+
+
 def parsed(goal: str) -> ls.GoalSpec:
     client = ls.ScriptedClient()
     client._parse_goal_text(goal)

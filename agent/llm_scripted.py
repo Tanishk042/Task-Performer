@@ -58,6 +58,23 @@ _MONEY_IN_TEXT = re.compile(
     rf"|(?:{_CURRENCY_CODE}\s*(?P<b>{_NUM}))"
     rf"|(?:(?P<c>{_NUM})\s*{_CURRENCY_CODE}\b)"
 )
+
+#: What this agent is for. A request that mentions neither the AP system nor an
+#: invoice is not a task, and starting a write path for it is how you enter a
+#: bill nobody asked for.
+_TASK_OBJECT = re.compile(
+    r"\b(ap|accounts?\s+payable|bills?|invoices?|payables?|vendor\s+portal|portal)\b", re.I
+)
+#: Removing things is not a capability here. Without this, "delete every bill"
+#: happily went looking for a bill to enter instead.
+_DESTRUCTIVE = re.compile(
+    r"\b(delete|remove|erase|wipe|purge|undo|revoke|void\s+all|drop\s+all)\b", re.I
+)
+_TASK_VERB = re.compile(
+    r"\b(enter|create|add|record|submit|upload|key|post|put|check|verify|"
+    r"look\s*up|find|search|list|show|report|flag)\b",
+    re.I,
+)
 _DAYS_RE = re.compile(r"(?:next|coming|within)\s+(\d+)\s+days?", re.I)
 _REF_RE = re.compile(r"\[(e\d+)\]")
 _INVOICE_NUMBER_RE = re.compile(r"\b[A-Z]{1,5}[-–][A-Z0-9]{2,10}\b")
@@ -532,6 +549,10 @@ class GoalSpec:
     skip_duplicates: bool = False
     wants_pdf: bool = False
     flag_threshold: float | None = None
+    #: Set when the request is not a task this agent can carry out at all. Empty
+    #: means proceed. The run stops immediately rather than starting a write
+    #: path for something that is not a write request.
+    unsupported: str = ""
 
 
 # ==========================================================================
@@ -746,8 +767,15 @@ class ScriptedClient:
                 self.spec.scope = "latest"
 
         self.spec.skip_duplicates = bool(re.search(
-            r"already been entered|not already|if not already|has ?n[o']t been entered|"
-            r"skip\b|only if|don'?t (?:create|enter)|do not (?:create|enter)",
+            # "skip" has to match its own inflections: `skip\b` does not match
+            # "skipping", and "skipping any already entered" is the phrasing this
+            # project ships in its own README. Missing it meant the agent
+            # proposed entering an invoice that was already in AP.
+            r"already\s+(?:been\s+)?entered|already\s+(?:in|present)|"
+            r"not already|if not already|has ?n[o']t been entered|"
+            r"\bskip\w*\b|only if|don'?t (?:create|enter)|do not (?:create|enter)|"
+            r"avoid\s+duplicates?|no\s+duplicates?|"
+            r"(?:are|is|that'?s|which\s+is)\s+already",
             goal, re.I,
         ))
         self.spec.wants_pdf = bool(re.search(r"\bpdf\b|\bdownload\b", goal, re.I))
@@ -755,8 +783,34 @@ class ScriptedClient:
         if amounts and re.search(r"over|above|exceed|more than|threshold", goal, re.I):
             self.spec.flag_threshold = float(amounts[0].replace(",", ""))
 
+        # Refuse before acting. These are cheap string checks, but they stop the
+        # agent wandering into a vendor page and proposing a write for a request
+        # that was never a request. The failure they prevent is the expensive
+        # one: a wrong bill written behind a plausible-looking approval prompt.
+        if not _TASK_OBJECT.search(goal):
+            self.spec.unsupported = (
+                "The request is not about the vendor portal or the AP system, so "
+                "there is nothing for me to do."
+            )
+        elif _DESTRUCTIVE.search(goal) and not re.search(
+            r"\b(enter|create|add|record)\b", goal, re.I
+        ):
+            self.spec.unsupported = (
+                "The request asks me to remove or delete something. I can only "
+                "enter bills, not delete them, so I have not touched anything."
+            )
+        elif not _TASK_VERB.search(goal):
+            self.spec.unsupported = (
+                "The request does not ask me to do anything I can perform "
+                "(enter a bill, or check whether one already exists)."
+            )
+
     # -- boot --------------------------------------------------------------
     def _do_boot(self, obs: str, tool_name: str, args: dict[str, Any]) -> AssistantTurn:
+        # Refuse before opening a browser at all. A run that stops here costs one
+        # step and cannot possibly have written anything.
+        if self.spec.unsupported:
+            return self._finish("blocked", self.spec.unsupported)
         if self.planned:
             self.stage = "portal_login"
             return self._one("Opening the vendor portal.", "browser_open",
@@ -947,10 +1001,39 @@ class ScriptedClient:
             return self._one(f"Opening {chosen['label']}.", "browser_click",
                              ref=chosen["ref"])
 
-        # Due-window sweep: collect vendors, then visit them one at a time.
-        self.window_queue = candidates
-        self.stage = "scan_next_vendor"
-        return self._do_scan_next_vendor(obs, tool_name, args)
+        # A sweep is only legitimate if the request asked for one. With no vendor
+        # named and no sweep scope, the task is not identifiable — "enter the
+        # latest invoice" with no vendor, or a sentence that is not a task at all.
+        # Falling through to the sweep here silently entered whichever vendor
+        # sorted first, which is how you write the wrong bill.
+        if self.spec.scope in {"due_window", "all_payable"}:
+            self.window_queue = candidates
+            self.stage = "scan_next_vendor"
+            return self._do_scan_next_vendor(obs, tool_name, args)
+
+        if not self.asked_choice:
+            self.asked_choice = True
+            return self._one(
+                "The request names no vendor, so asking which one to use.",
+                "ask_user",
+                question="Which vendor should I take the invoice from?",
+                options=[c["label"] for c in candidates],
+                context="The request did not name a vendor, and it is not a "
+                        "request to sweep every vendor, so guessing would risk "
+                        "entering the wrong bill.",
+            )
+        choice = parse_user_choice(obs)
+        chosen = match_option(candidates, choice)
+        if chosen is None:
+            return self._finish(
+                "blocked",
+                f"Could not tell which vendor {choice!r} refers to "
+                f"(candidates: {', '.join(c['label'] for c in candidates)}).",
+            )
+        self.spec.vendor = chosen["label"]
+        self.stage = "read_invoices"
+        return self._one(f"Opening {chosen['label']}.", "browser_click",
+                         ref=chosen["ref"])
 
     # -- reading a vendor's invoice list ------------------------------------
     def _do_read_invoices(self, obs: str, tool_name: str, args: dict[str, Any]) -> AssistantTurn:
@@ -1204,11 +1287,17 @@ class ScriptedClient:
         A plural noun alone is not enough ("invoices" turns up in plenty of
         one-off requests), so this also looks for the words that actually
         generalise the ask.
+
+        The noun is deliberately a set: this portal calls an open invoice a
+        "payable" as often as an "invoice", and matching only "invoice" made
+        "enter every open payable from Globex" fall through to single-invoice
+        handling — quietly doing less than the user asked for.
         """
         text = goal.lower()
-        if re.search(r"\b(all|every|each|any)\b[^.]{0,40}\binvoice", text):
+        noun = r"(?:invoices?|payables?|bills?)"
+        if re.search(rf"\b(all|every|each|any)\b[^.]{{0,40}}\b{noun}\b", text):
             return True
-        if re.search(r"\binvoices\b", text) and re.search(
+        if re.search(rf"\b{noun}\b", text) and re.search(
             r"\b(have|hasn't|has not|aren't|are not|weren't|were not|should be|to be)\b",
             text,
         ):
