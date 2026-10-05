@@ -2,11 +2,19 @@
 # library it needs (libnss3, libatk, libgbm, ...), which is the single hardest
 # part of containerising a browser agent.
 #
-# The tag MUST match the playwright pin in requirements.txt. Playwright refuses
-# to run against a browser build from a different version, and the failure is a
-# baffling "executable doesn't exist" at launch rather than a clear version
-# error. Bump both together.
-FROM mcr.microsoft.com/playwright/python:v1.49.1-noble
+# The version MUST match the playwright pin in requirements.txt. Playwright
+# refuses to run against a browser build from a different version, and the
+# failure is a baffling "executable doesn't exist" at launch rather than a clear
+# version error. Bump both together.
+#
+# TARGETARCH comes from BuildKit and matches Playwright's own tag suffix, so one
+# Dockerfile serves both architectures. Oracle's free tier is Ampere A1 (arm64)
+# while a laptop or a Fly machine is amd64, and the difference is one tag. If
+# TARGETARCH is ever empty (a builder without BuildKit) the unsuffixed -noble tag
+# is a multi-arch manifest and still resolves to the right image.
+ARG PLAYWRIGHT_VERSION=1.49.1
+ARG TARGETARCH
+FROM mcr.microsoft.com/playwright/python:v${PLAYWRIGHT_VERSION}-noble${TARGETARCH:+-$TARGETARCH}
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

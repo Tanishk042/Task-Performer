@@ -179,42 +179,72 @@ explicit about why, because the UI is static and looks deployable:
 It is already shaped like an ordinary web service, so it wants a **container with
 a real disk and long-running processes**.
 
-### Fly.io
+### Free: Oracle Cloud Always Free (recommended)
+
+Oracle's Ampere **A1** shape is free indefinitely and gives you 4 OCPU / 24 GB of
+ARM — far more than the ~1.5 GB this needs. `deploy/` has the lot.
+
+```bash
+# 1. Create a VM.Standard.A1.Flex instance (aarch64) with a public IP.
+#    Open TCP 80/443 in the VCN security list.
+# 2. Point an A record for your domain at it. Caddy cannot get a certificate
+#    until this resolves.
+git clone https://github.com/Tanishk042/Task-Performer.git && cd Task-Performer
+sudo bash deploy/oracle_setup.sh     # Docker, firewall, password hash
+nano deploy/.env                     # at minimum DOMAIN
+bash deploy/deploy.sh                # build, start, wait for health
+```
+
+| | |
+| --- | --- |
+| `deploy/docker-compose.yml` | The agent plus Caddy; named volume for state |
+| `deploy/Caddyfile` | Automatic TLS, and `flush_interval -1` so SSE is not buffered |
+| `deploy/oracle_setup.sh` | Idempotent VM prep |
+| `deploy/deploy.sh` | Validates config, builds, waits for health, prints the URL |
+
+**Authentication is mandatory and fails closed.** This app has no auth of its own,
+so anyone who reaches it can start agent runs and — with the real Anthropic
+provider — spend your tokens. Caddy refuses to start if `CADDY_USER` or
+`CADDY_HASH` is empty rather than serving the agent openly, and the
+orchestrator is bound to `127.0.0.1` so Caddy is the only way in.
+
+arm64 is not an obstacle: `Dockerfile` derives the Playwright tag from
+`TARGETARCH`, so one file builds correctly for Oracle's ARM and for amd64
+elsewhere.
+
+Two traps encoded in the config:
+
+- **Never let the machine stop.** Run state is in-process. `suspend` freezes a
+  run mid-approval; `stop` discards it and only SQLite survives.
+- **One machine only.** Scaling out gives every replica its own databases and its
+  own copy of the run, so a browser could start a run on one and poll another.
+
+Nothing passes `--reset` in production: the apps call `bootstrap()` on startup,
+which is idempotent — a fresh volume seeds itself, later boots leave it alone.
+The deploy scripts refuse a `RESET=true` in `.env` for exactly that reason.
+
+Full instructions and the OCI gotchas (ARM capacity is often out of stock) are in
+[`deploy/README.md`](deploy/README.md).
+
+### Paid: Fly.io
 
 ```bash
 fly launch --no-deploy --copy-config
 fly volumes create aiworker_state --size 1
-fly secrets set ANTHROPIC_API_KEY=...    # optional; scripted provider is the default
+fly secrets set ANTHROPIC_API_KEY=...
 fly deploy
 ```
 
-What the committed config does:
+Same Dockerfile. `fly.toml` sets `auto_stop_machines = "off"` and pins one
+machine — the same "don't stop the machine" rule as above, which is why Fly's
+default `suspend` would quietly break parked runs. Needs a 2 GB VM; the 256 MB
+default will not hold Chromium.
 
-| | |
-| --- | --- |
-| `Dockerfile` | Playwright's `v1.49.1-noble` image, which already has Chromium and every system dependency |
-| `.dockerignore` | Keeps the 181 MB `.venv` and host run state out of the build context |
-| `fly.toml` | One volume at `/data`, `HOST=0.0.0.0`, `$PORT`, health check on `/health` |
-| `auto_stop_machines = "off"` | **Load-bearing.** See below |
-| `[[vm]]` 2 GB + 512 MB swap | Chromium plus three Python processes will not fit in the 256 MB default |
+### Other hosts that work
 
-Two things that are easy to get wrong:
-
-- **Do not let Fly stop or suspend the machine.** Run state lives in the process
-  (`RunManager`, the parked interaction, the open SSE stream). `suspend` freezes
-  it mid-run; `stop` discards it and only the SQLite data survives. Either turns
-  a 15-second demo into an intermittent hang.
-- **One machine only.** Scaling out gives every instance its own copy of the
-  SQLite databases and its own in-memory run state, so a browser could start a
-  run on one instance and poll a different one and find nothing.
-
-The container deliberately runs **without `--reset`**: the apps call
-`bootstrap()` on startup, which is idempotent — a fresh volume seeds itself, and
-every later boot leaves the existing rows alone. Passing `--reset` would wipe the
-volume on every deploy.
-
-`Railway`, `Render` and a plain VPS + systemd + Caddy all work the same way; only
-the volume and health-check config changes.
+`Railway`, `Render` and a plain VPS + systemd + Caddy all run the same image. Only
+the volume and health-check config changes. Avoid Render's *free* tier: 512 MB is
+too small and it sleeps after 15 minutes.
 
 ---
 
@@ -231,6 +261,8 @@ the volume and health-check config changes.
 | `ui/` | One page, no framework, no build step |
 | `environments/` | The two mock apps + fault injection |
 | `scripts/serve.py` | Start everything at once |
-| `Dockerfile`, `fly.toml` | Container deploy (see [Deploy](#deploy)) |
+| `Dockerfile` | Multi-arch container image (amd64 + arm64) |
+| `fly.toml` | Fly.io deploy |
+| `deploy/` | Oracle Always Free deploy: compose, Caddy, scripts |
 
 `ARCHITECTURE.md` has the full design and the reasoning behind it.

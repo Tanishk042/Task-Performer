@@ -1,0 +1,92 @@
+# Single-VM deployment for Oracle Cloud Always Free (Ampere A1, arm64).
+#
+#   cp deploy/.env.example deploy/.env    # set DOMAIN + the Caddy password hash
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# Two containers: the agent, and Caddy in front of it for TLS. Caddy obtains and
+# renews a Let's Encrypt certificate on its own, so there is no certbot and
+# nothing to expire.
+
+services:
+  aiworker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: aiworker:latest
+    restart: unless-stopped
+    environment:
+      # The agent and the two mock apps all run in this one process tree, so the
+      # orchestrator has to bind every interface for Caddy to reach it.
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      DATA_DIR: /data
+      RUNS_DIR: /data/runs
+      WORKSPACE_DIR: /data/workspace
+      BROWSER_HEADLESS: "true"
+      # No API key => ScriptedClient, the deterministic offline policy engine.
+      # Set LLM_PROVIDER=anthropic and ANTHROPIC_API_KEY in deploy/.env to use
+      # the real model instead.
+      LLM_PROVIDER: ${LLM_PROVIDER:-scripted}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
+      # A run parks here waiting for a person to answer. Do not set this below
+      # the time a human plausibly needs to read an approval prompt.
+      QUESTION_TIMEOUT_SECONDS: ${QUESTION_TIMEOUT_SECONDS:-900}
+      AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-120}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - state:/data
+    # Bound to loopback, not 0.0.0.0: the only way in should be through Caddy,
+    # which is what terminates TLS and can add authentication.
+    ports:
+      - "127.0.0.1:8080:8080"
+    # Chromium plus three Python servers. On a 24GB A1 shape this is generous;
+    # the floor is roughly 1.5GB.
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      # Chromium's first launch is slow. Restarting during this window looks
+      # like a crash loop when it is just a cold start.
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      aiworker:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      # Both are required. Caddy refuses to start if either is empty, which is
+      # deliberate: this app has no auth of its own, so a missing password must
+      # stop the deploy rather than publish an agent that spends LLM credits.
+      CADDY_USER: ${CADDY_USER:-}
+      CADDY_HASH: ${CADDY_HASH:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"     # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  # The databases, the run traces and the tool sandbox. This is the only thing
+  # that must survive a redeploy.
+  state:
+  caddy_data:
+  caddy_config:
